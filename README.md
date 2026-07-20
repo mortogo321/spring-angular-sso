@@ -1,6 +1,6 @@
 # Spring + Angular SSO Showcase
 
-[![CI](https://github.com/mortogo321/spring-angular-sso/actions/workflows/ci.yml/badge.svg)](https://github.com/mortogo321/spring-angular-sso/actions/workflows/ci.yml)
+[![CI](https://github.com/mortogo321/spring-angular-sso/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mortogo321/spring-angular-sso/actions/workflows/ci.yml?query=branch%3Amain)
 
 A small full-stack reference app demonstrating single sign-on between a Spring
 Boot API and an Angular SPA, fronted by Keycloak, all wired together with
@@ -149,7 +149,7 @@ cd frontend && bun run test          # headless unit tests
 
 ## CI/CD
 
-### `.github/workflows/ci.yml` - runs on every push to `main` and on pull requests
+### `.github/workflows/ci.yml` - runs on pushes to `main` and on pull requests (Markdown-only changes trigger no run at all)
 
 A staged pipeline - **Code Quality &rarr; Test &rarr; Build (&rarr; Deploy,
 commented out)** - split into a backend lane and a frontend lane. The two
@@ -157,12 +157,14 @@ lanes run in parallel (each stack's Test needs only its own Code Quality)
 and converge at Build via `needs:`. Every job runs its own
 `dorny/paths-filter` step (no shared upstream "changes" job) to compute
 just the booleans it gates its steps on - so a frontend-only PR skips the
-backend steps of every stage instead of paying for a Testcontainers run,
-while a docs-only PR skips both. Any change
+backend steps of every stage instead of paying for a Testcontainers run.
+Markdown-only changes don't start the workflow at all (workflow-level
+`paths-ignore`). Any change
 under `.github/workflows/**` forces every gated step to run (so you can
-trust a pipeline-editing PR is fully validated before merge). **Pushes to
-`main` always run every step**, regardless of what changed, so `main`
-never merges on a partially-validated pipeline. Because only steps skip
+trust a pipeline-editing PR is fully validated before merge). **Whenever a
+push to `main` triggers the workflow, every step runs**, regardless of
+which paths changed, so `main` never merges on a partially-validated
+pipeline. Because only steps skip
 (not whole jobs), the `needs:` chain is a plain dependency graph.
 
 1. **Code Quality** *(jobs `quality-backend`, `quality-frontend`)* - the

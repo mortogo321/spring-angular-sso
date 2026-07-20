@@ -1,9 +1,17 @@
 name: CI
 
+# Markdown-only changes (README and friends) skip the pipeline entirely:
+# GitHub only starts the workflow if at least one changed file falls
+# outside `paths-ignore`. Finer-grained skipping (backend-only vs
+# frontend-only) is handled per job by paths-filter below.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"
   pull_request:
+    paths-ignore:
+      - "**.md"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -18,8 +26,9 @@ jobs:
   # wholesale - only individual steps do, gated on that job's own filter
   # output. That keeps `needs:` a plain dependency chain (no more
   # `always() && result == 'skipped'` juggling to shepherd a skipped job's
-  # status through downstream `needs`), while a docs-only PR still skips
-  # the expensive steps in every stage. Any change under
+  # status through downstream `needs`), while e.g. a frontend-only PR
+  # still skips the backend steps in every stage (Markdown-only changes
+  # never even start the workflow - see `paths-ignore` above). Any change under
   # `.github/workflows/**` forces every gated step to run (so a
   # pipeline-editing PR is fully validated before merge), and **pushes to
   # `main` always run every step** (see each step's
