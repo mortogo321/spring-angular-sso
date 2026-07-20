@@ -25,8 +25,8 @@ jobs:
   # `main` always run every step** (see each step's
   # `|| github.event_name == 'push'` escape), so `main` never merges on a
   # partially-validated pipeline.
-  quality:
-    name: Code Quality
+  quality-backend:
+    name: Code Quality (Backend)
     runs-on: ubuntu-latest
     steps:
       # paths-filter resolves the diff via local git on push events (the
@@ -42,12 +42,6 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
-            frontend:
-              - 'frontend/**'
-            docker:
-              - 'backend/**'
-              - 'frontend/**'
-              - 'docker-compose.yml'
             workflows:
               - '.github/workflows/**'
 
@@ -66,6 +60,26 @@ jobs:
         working-directory: backend
         run: ./mvnw --batch-mode spotless:check
 
+  quality-frontend:
+    name: Code Quality (Frontend)
+    runs-on: ubuntu-latest
+    steps:
+      # paths-filter resolves the diff via local git on push events (the
+      # checkout-free API mode only works for pull_request), so it needs
+      # the repository checked out.
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Detect changes
+        uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+            workflows:
+              - '.github/workflows/**'
+
       - name: Set up Bun
         if: steps.filter.outputs.frontend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
         uses: oven-sh/setup-bun@v2
@@ -81,9 +95,9 @@ jobs:
         working-directory: frontend
         run: bun run lint
 
-  test:
-    name: Test
-    needs: quality
+  test-backend:
+    name: Test (Backend)
+    needs: quality-backend
     runs-on: ubuntu-latest
     steps:
       # paths-filter resolves the diff via local git on push events (the
@@ -99,12 +113,6 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
-            frontend:
-              - 'frontend/**'
-            docker:
-              - 'backend/**'
-              - 'frontend/**'
-              - 'docker-compose.yml'
             workflows:
               - '.github/workflows/**'
 
@@ -120,6 +128,27 @@ jobs:
         if: steps.filter.outputs.backend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
         working-directory: backend
         run: ./mvnw --batch-mode verify
+
+  test-frontend:
+    name: Test (Frontend)
+    needs: quality-frontend
+    runs-on: ubuntu-latest
+    steps:
+      # paths-filter resolves the diff via local git on push events (the
+      # checkout-free API mode only works for pull_request), so it needs
+      # the repository checked out.
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Detect changes
+        uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+            workflows:
+              - '.github/workflows/**'
 
       - name: Set up Bun
         if: steps.filter.outputs.frontend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
@@ -142,7 +171,7 @@ jobs:
 
   build:
     name: Build
-    needs: test
+    needs: [test-backend, test-frontend]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -159,10 +188,6 @@ jobs:
         id: filter
         with:
           filters: |
-            backend:
-              - 'backend/**'
-            frontend:
-              - 'frontend/**'
             docker:
               - 'backend/**'
               - 'frontend/**'

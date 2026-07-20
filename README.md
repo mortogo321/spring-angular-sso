@@ -150,29 +150,32 @@ cd frontend && bun run test          # headless unit tests
 ### `.github/workflows/ci.yml` - runs on every push to `main` and on pull requests
 
 A staged pipeline - **Code Quality &rarr; Test &rarr; Build (&rarr; Deploy,
-commented out)** - where each job chains off the previous one via `needs:`.
-Every job runs its own `dorny/paths-filter` step (no shared upstream
-"changes" job) to compute the same `backend` / `frontend` / `docker` /
-`workflows` booleans, and gates its individual steps on them - so a
-frontend-only PR skips the backend steps of every stage instead of paying
-for a Testcontainers run, while a docs-only PR skips both. Any change
+commented out)** - split into a backend lane and a frontend lane. The two
+lanes run in parallel (each stack's Test needs only its own Code Quality)
+and converge at Build via `needs:`. Every job runs its own
+`dorny/paths-filter` step (no shared upstream "changes" job) to compute
+just the booleans it gates its steps on - so a frontend-only PR skips the
+backend steps of every stage instead of paying for a Testcontainers run,
+while a docs-only PR skips both. Any change
 under `.github/workflows/**` forces every gated step to run (so you can
 trust a pipeline-editing PR is fully validated before merge). **Pushes to
 `main` always run every step**, regardless of what changed, so `main`
 never merges on a partially-validated pipeline. Because only steps skip
 (not whole jobs), the `needs:` chain is a plain dependency graph.
 
-1. **Code Quality** *(job `quality`)* - sets up Temurin JDK 21 and runs
-   `./mvnw spotless:check` *(gated on backend/workflow changes, or push)*,
-   then sets up Bun, installs frontend dependencies, and runs
-   `bun run lint` / angular-eslint *(gated on frontend/workflow changes,
-   or push)*.
-2. **Test** *(job `test`, needs `quality`)* - `./mvnw verify` on Temurin
+1. **Code Quality** *(jobs `quality-backend`, `quality-frontend`)* - the
+   backend lane sets up Temurin JDK 21 and runs `./mvnw spotless:check`
+   *(gated on backend/workflow changes, or push)*; the frontend lane sets
+   up Bun, installs dependencies, and runs `bun run lint` / angular-eslint
+   *(gated on frontend/workflow changes, or push)*.
+2. **Test** *(jobs `test-backend`, `test-frontend`, each needing its
+   lane's quality job)* - the backend lane runs `./mvnw verify` on Temurin
    JDK 21 (unit + Testcontainers integration tests; the Docker daemon is
    already available on the runner) *(gated on backend/workflow changes,
-   or push)*, then `bun install --frozen-lockfile`, headless unit tests,
-   and a production build *(gated on frontend/workflow changes, or push)*.
-3. **Build** *(job `build`, needs `test`)* - builds both multi-stage
+   or push)*; the frontend lane runs `bun install --frozen-lockfile`,
+   headless unit tests, and a production build *(gated on
+   frontend/workflow changes, or push)*.
+3. **Build** *(job `build`, needs both test jobs)* - builds both multi-stage
    `Dockerfile`s with Buildx to catch build breakage early *(gated on
    backend/frontend/docker/workflow changes, or push)*; on push to `main`
    it additionally logs in to GHCR and pushes `latest` + commit-sha tags
