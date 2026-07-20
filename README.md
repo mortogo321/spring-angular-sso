@@ -8,8 +8,8 @@ Docker Compose.
 
 | Area | What's demonstrated |
 | --- | --- |
-| Spring Boot | Layered REST API under `/api`, OAuth2 resource server (JWT validation), Spring Data JPA against Postgres, `/actuator/health` |
-| Angular | Standalone components, signals, route guards driven by realm roles, an SPA built and served as static assets |
+| Spring Boot | Layered REST API under `/api`, OAuth2 resource server (JWT validation + realm-role mapping), Spring Data JPA against Postgres, Flyway migrations, Bean Validation, RFC 9457 `ProblemDetail` error responses, springdoc OpenAPI/Swagger UI with OAuth2 login, `/actuator/health` |
+| Angular | Standalone components only (no NgModules), zoneless signals-based state, `@if`/`@for` control flow, lazy `loadComponent` routes, functional guards + bearer-token interceptor, typed reactive forms, `keycloak-angular` PKCE integration, Vitest unit tests |
 | SSO flow | Authorization Code + PKCE (S256) against Keycloak, role-based access (`user` / `admin`) enforced on both sides |
 | Docker | Multi-stage builds for both the backend (Maven wrapper -> slim JRE) and frontend (bun build -> nginx) |
 | Testcontainers | Backend integration tests spin up real dependencies instead of mocking the database |
@@ -36,6 +36,29 @@ Docker Compose.
 The browser talks to Keycloak directly for the login redirect (PKCE), and to
 nginx for everything else; nginx proxies `/api/*` through to the backend.
 
+## Project layout
+
+Each stack is self-contained - its own `Dockerfile`, its own `.gitignore`,
+its own toolchain - so either can be extracted and used standalone. The
+root only holds orchestration and global config.
+
+```
+├── backend/                  Spring Boot API (Maven)
+│   ├── src/                  main + test (unit, security slice, Testcontainers)
+│   ├── Dockerfile            multi-stage: Maven build -> slim JRE runtime
+│   └── .gitignore            Maven/JVM-specific ignores
+├── frontend/                 Angular SPA (bun)
+│   ├── src/                  standalone components, signals, keycloak-angular
+│   ├── Dockerfile            multi-stage: bun build -> nginx runtime
+│   ├── nginx.conf            SPA fallback + /api reverse proxy
+│   └── .gitignore            Node/Angular-specific ignores
+├── infra/keycloak/           realm import (no users) + demo-user seed script
+├── .github/workflows/        ci.yml + rollback.yml
+├── docker-compose.yml        postgres + keycloak + keycloak-init + backend + frontend
+├── .env.example              every variable with its default
+└── .gitignore                global concerns only (env, OS, editors, logs)
+```
+
 ## Quick start
 
 ```bash
@@ -46,7 +69,9 @@ docker compose up --build
 | Service | URL |
 | --- | --- |
 | Frontend (app) | http://localhost:4200 |
-| Backend API + Swagger/OpenAPI | http://localhost:8080/api, http://localhost:8080/actuator/health |
+| Backend API | http://localhost:8080/api/tasks |
+| Swagger UI | http://localhost:8080/swagger-ui/index.html |
+| Backend health | http://localhost:8080/actuator/health |
 | Keycloak | http://localhost:8081 |
 
 The `keycloak-init` service seeds the two demo users the first time the
@@ -80,6 +105,37 @@ bun install
 bun start   # ng serve, proxies /api to the backend per proxy.conf.json
 ```
 
+## Dev mode (hot reload)
+
+Run the whole stack in containers with live reload on both sides - no local
+JDK or Angular CLI toolchain needed:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml watch
+```
+
+This builds `backend`/`frontend` from their Dockerfile `dev` stages (instead
+of the prod `runtime`/nginx images) and uses [Compose
+Watch](https://docs.docker.com/compose/how-tos/file-watch/) to sync source
+changes into the running containers:
+
+- **Frontend** - `ng serve` runs inside the container; Compose Watch syncs
+  `frontend/src` and `frontend/public` into it, and Angular's own dev-server
+  live reload (HMR) picks up the change in the browser almost immediately
+  (well under a second, no page refresh needed for most template/style
+  edits). Editing `package.json` or `bun.lock` triggers a full image rebuild
+  (fresh `bun install`) instead.
+- **Backend** - Compose Watch syncs `backend/src` into the container, where
+  an `inotifywait` loop recompiles changed classes with `./mvnw -o compile`.
+  Spring Boot DevTools (present on the classpath only in the `dev` image)
+  detects the updated `.class` files and performs an in-JVM restart - a few
+  seconds, not a container rebuild. Editing `pom.xml` triggers a full image
+  rebuild instead.
+
+The prod flow (`docker compose up --build` against plain `docker-compose.yml`)
+is unchanged - the `dev` build stages are opt-in and are never selected unless
+targeted explicitly (via this overlay file).
+
 ## Tests
 
 ```bash
@@ -93,32 +149,41 @@ cd frontend && bun run test          # headless unit tests
 
 ### `.github/workflows/ci.yml` - runs on every push to `main` and on pull requests
 
-1. **changes** - `dorny/paths-filter` compares the diff against the PR base
-   (or the previous commit on push) and exposes `backend` / `frontend` /
-   `docker` / `workflows` booleans. Every other job is gated on these, so a
-   frontend-only PR doesn't pay for a Testcontainers run. Any change under
-   `.github/workflows/**` forces every job to run (so you can trust a
-   pipeline-editing PR is fully validated before merge). **Pushes to
-   `main` always run every job**, regardless of what changed, so `main`
-   never merges on a partially-validated pipeline.
-2. **backend** *(gated on backend/workflow changes, or push)* - quality
-   gate first (`./mvnw spotless:check`, Google Java Format via Spotless),
-   then `./mvnw verify` on Temurin JDK 21 (unit + Testcontainers
-   integration tests; the Docker daemon is already available on the
-   runner).
-3. **frontend** *(gated on frontend/workflow changes, or push)* -
-   `bun install --frozen-lockfile`, quality gate (`bun run lint` /
-   angular-eslint), headless unit tests, production build.
-4. **docker** *(gated on backend/frontend/docker/workflow changes, or
-   push)* - builds both multi-stage `Dockerfile`s with Buildx to catch
-   build breakage early; on push to `main` it additionally logs in to GHCR
-   and pushes `latest` + commit-sha tags for both images.
-5. **deploy** *(present but fully commented out)* - a ready-to-uncomment
-   template (SSH `docker compose pull && up -d`, with a Kubernetes/Helm
-   alternative sketched in comments) for wiring up continuous deployment
-   once there's somewhere to deploy to. See the `# UNCOMMENT AND CONFIGURE`
-   block at the bottom of `ci.yml` for the secrets it needs
-   (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, optional `DEPLOY_PORT`).
+A staged pipeline - **Code Quality &rarr; Test &rarr; Build (&rarr; Deploy,
+commented out)** - where each job chains off the previous one via `needs:`.
+Every job runs its own `dorny/paths-filter` step (no shared upstream
+"changes" job) to compute the same `backend` / `frontend` / `docker` /
+`workflows` booleans, and gates its individual steps on them - so a
+frontend-only PR skips the backend steps of every stage instead of paying
+for a Testcontainers run, while a docs-only PR skips both. Any change
+under `.github/workflows/**` forces every gated step to run (so you can
+trust a pipeline-editing PR is fully validated before merge). **Pushes to
+`main` always run every step**, regardless of what changed, so `main`
+never merges on a partially-validated pipeline. Because only steps skip
+(not whole jobs), the `needs:` chain is a plain dependency graph.
+
+1. **Code Quality** *(job `quality`)* - sets up Temurin JDK 21 and runs
+   `./mvnw spotless:check` *(gated on backend/workflow changes, or push)*,
+   then sets up Bun, installs frontend dependencies, and runs
+   `bun run lint` / angular-eslint *(gated on frontend/workflow changes,
+   or push)*.
+2. **Test** *(job `test`, needs `quality`)* - `./mvnw verify` on Temurin
+   JDK 21 (unit + Testcontainers integration tests; the Docker daemon is
+   already available on the runner) *(gated on backend/workflow changes,
+   or push)*, then `bun install --frozen-lockfile`, headless unit tests,
+   and a production build *(gated on frontend/workflow changes, or push)*.
+3. **Build** *(job `build`, needs `test`)* - builds both multi-stage
+   `Dockerfile`s with Buildx to catch build breakage early *(gated on
+   backend/frontend/docker/workflow changes, or push)*; on push to `main`
+   it additionally logs in to GHCR and pushes `latest` + commit-sha tags
+   for both images.
+4. **Deploy** *(job `deploy`, needs `build`; present but fully commented
+   out)* - a ready-to-uncomment template (SSH `docker compose pull && up
+   -d`, with a Kubernetes/Helm alternative sketched in comments) for
+   wiring up continuous deployment once there's somewhere to deploy to.
+   See the `# UNCOMMENT AND CONFIGURE` block at the bottom of `ci.yml` for
+   the secrets it needs (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`,
+   optional `DEPLOY_PORT`).
 
 ### `.github/workflows/rollback.yml` - manual rollback
 

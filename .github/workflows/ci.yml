@@ -13,19 +13,21 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  # First job: figures out which parts of the tree changed so the rest of
-  # the pipeline can skip work that isn't affected - e.g. a docs-only PR
-  # doesn't need to spin up Testcontainers. On push to `main` every
-  # downstream job still runs regardless (see each job's `if:`), so main
-  # always gets full validation.
-  changes:
-    name: Detect changed paths
+  # Each job below runs its own `dorny/paths-filter` step rather than
+  # sharing one upstream "changes" job, because jobs no longer skip
+  # wholesale - only individual steps do, gated on that job's own filter
+  # output. That keeps `needs:` a plain dependency chain (no more
+  # `always() && result == 'skipped'` juggling to shepherd a skipped job's
+  # status through downstream `needs`), while a docs-only PR still skips
+  # the expensive steps in every stage. Any change under
+  # `.github/workflows/**` forces every gated step to run (so a
+  # pipeline-editing PR is fully validated before merge), and **pushes to
+  # `main` always run every step** (see each step's
+  # `|| github.event_name == 'push'` escape), so `main` never merges on a
+  # partially-validated pipeline.
+  quality:
+    name: Code Quality
     runs-on: ubuntu-latest
-    outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      docker: ${{ steps.filter.outputs.docker }}
-      workflows: ${{ steps.filter.outputs.workflows }}
     steps:
       # paths-filter resolves the diff via local git on push events (the
       # checkout-free API mode only works for pull_request), so it needs
@@ -49,85 +51,131 @@ jobs:
             workflows:
               - '.github/workflows/**'
 
-  backend:
-    name: Backend (Spring Boot)
-    needs: changes
-    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.workflows == 'true' || github.event_name == 'push'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
       - name: Set up JDK 21 (Temurin)
+        if: steps.filter.outputs.backend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
           cache: maven
 
-      # Quality gate before the (slower) test run: fails fast on
+      # Quality gate before the (slower) test job: fails fast on
       # formatting drift instead of waiting for Testcontainers to spin up.
       - name: Code quality (Spotless formatting check)
+        if: steps.filter.outputs.backend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
+        working-directory: backend
         run: ./mvnw --batch-mode spotless:check
 
-      - name: Run tests and build (mvnw verify, incl. Testcontainers)
-        run: ./mvnw --batch-mode verify
-
-  frontend:
-    name: Frontend (Angular)
-    needs: changes
-    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.workflows == 'true' || github.event_name == 'push'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
       - name: Set up Bun
+        if: steps.filter.outputs.frontend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
         uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
+        if: steps.filter.outputs.frontend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
+        working-directory: frontend
         run: bun install --frozen-lockfile
 
-      # Quality gate before tests: angular-eslint (ng lint).
+      # Quality gate before the test job: angular-eslint (ng lint).
       - name: Code quality (lint)
+        if: steps.filter.outputs.frontend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
+        working-directory: frontend
         run: bun run lint
 
+  test:
+    name: Test
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      # paths-filter resolves the diff via local git on push events (the
+      # checkout-free API mode only works for pull_request), so it needs
+      # the repository checked out.
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Detect changes
+        uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+            docker:
+              - 'backend/**'
+              - 'frontend/**'
+              - 'docker-compose.yml'
+            workflows:
+              - '.github/workflows/**'
+
+      - name: Set up JDK 21 (Temurin)
+        if: steps.filter.outputs.backend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Run tests and build (mvnw verify, incl. Testcontainers)
+        if: steps.filter.outputs.backend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
+        working-directory: backend
+        run: ./mvnw --batch-mode verify
+
+      - name: Set up Bun
+        if: steps.filter.outputs.frontend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        if: steps.filter.outputs.frontend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+
       - name: Run unit tests (headless)
+        if: steps.filter.outputs.frontend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
+        working-directory: frontend
         run: bun run test
 
       - name: Production build
+        if: steps.filter.outputs.frontend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
+        working-directory: frontend
         run: bun run build
 
-  docker:
-    name: Docker images
-    needs: [changes, backend, frontend]
-    # Runs whenever backend and/or frontend actually ran (success) or were
-    # legitimately skipped by the path filter (not failed/cancelled), and
-    # only if this PR/push actually touches something docker-relevant -
-    # unless it's a push to main, which always gets a full build.
-    if: |
-      always() &&
-      (needs.backend.result == 'success' || needs.backend.result == 'skipped') &&
-      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped') &&
-      (needs.changes.outputs.docker == 'true' || needs.changes.outputs.workflows == 'true' || github.event_name == 'push')
+  build:
+    name: Build
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
+      # paths-filter resolves the diff via local git on push events (the
+      # checkout-free API mode only works for pull_request), so it needs
+      # the repository checked out.
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Detect changes
+        uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+            docker:
+              - 'backend/**'
+              - 'frontend/**'
+              - 'docker-compose.yml'
+            workflows:
+              - '.github/workflows/**'
+
       - name: Set up Docker Buildx
+        if: steps.filter.outputs.docker == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
         uses: docker/setup-buildx-action@v4
 
       - name: Compute lowercase image repository (GHCR requires lowercase)
+        if: steps.filter.outputs.docker == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
         run: echo "IMAGE_REPO=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       - name: Log in to GHCR
@@ -139,6 +187,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build (and push on main) backend image
+        if: steps.filter.outputs.docker == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
         uses: docker/build-push-action@v7
         with:
           context: ./backend
@@ -149,6 +198,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_REPO }}/backend:${{ github.sha }}
 
       - name: Build (and push on main) frontend image
+        if: steps.filter.outputs.docker == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
         uses: docker/build-push-action@v7
         with:
           context: ./frontend
@@ -173,7 +223,7 @@ jobs:
   #   # `docker login ghcr.io` credentials configured, or a private-registry
   #   # pull secret set up separately.
   #   name: Deploy
-  #   needs: docker
+  #   needs: build
   #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
   #   runs-on: ubuntu-latest
   #   environment: production

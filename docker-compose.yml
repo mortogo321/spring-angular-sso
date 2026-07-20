@@ -88,6 +88,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      target: runtime
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,6 +121,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: runtime
     depends_on:
       - backend
     ports:

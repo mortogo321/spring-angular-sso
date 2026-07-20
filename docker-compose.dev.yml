@@ -1,0 +1,56 @@
+name: spring-angular-sso
+
+# Dev overlay: hot-reload mode.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml watch
+#
+# Swaps backend/frontend to their Dockerfile `dev` build stages and wires up
+# Compose Watch (see https://docs.docker.com/compose/how-tos/file-watch/) to
+# sync source changes into the running containers. The base docker-compose.yml
+# is untouched by this file's presence - plain `docker compose up --build`
+# still builds and runs the prod `runtime`/nginx images.
+
+volumes:
+  backend-m2:
+
+services:
+  backend:
+    build:
+      target: dev
+    volumes:
+      # Persists the Maven local repo across container recreates (e.g. when
+      # pom.xml changes trigger a `rebuild` below), so dependencies resolved
+      # once aren't re-fetched every time.
+      - backend-m2:/root/.m2
+    develop:
+      watch:
+        - path: ./backend/src
+          action: sync
+          target: /app/src
+        - path: ./backend/pom.xml
+          action: rebuild
+
+  frontend:
+    build:
+      target: dev
+    # !override replaces the prod port list instead of merging with it -
+    # a merged list would try to bind host 4200 twice (prod 4200:80 + dev
+    # 4200:4200) and fail with "port is already allocated".
+    ports: !override
+      - "4200:4200"
+    volumes:
+      # Anonymous volume so the container's own bun-installed node_modules
+      # is never shadowed by anything from the host.
+      - /app/node_modules
+    develop:
+      watch:
+        - path: ./frontend/src
+          action: sync
+          target: /app/src
+        - path: ./frontend/public
+          action: sync
+          target: /app/public
+        - path: ./frontend/package.json
+          action: rebuild
+        - path: ./frontend/bun.lock
+          action: rebuild

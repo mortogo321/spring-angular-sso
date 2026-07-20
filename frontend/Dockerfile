@@ -16,6 +16,25 @@ RUN bun install --frozen-lockfile
 COPY . .
 RUN bun run ng build
 
+# Stage: dev (hot reload via `ng serve`).
+# Same node:26-alpine + bun binary pattern as the build stage above - the
+# Angular CLI still needs real Node, bun is just the package manager/runner.
+# NOT the default build target: it sits before the final runtime stage below,
+# so an untargeted `docker build` still produces the prod nginx image.
+FROM node:26-alpine AS dev
+COPY --from=oven/bun:1.3.14-alpine /usr/local/bin/bun /usr/local/bin/bun
+
+WORKDIR /app
+
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
+
+COPY . .
+
+EXPOSE 4200
+
+CMD ["bun", "run", "ng", "serve", "--host", "0.0.0.0", "--proxy-config", "proxy.conf.docker.json"]
+
 # Stage 2: serve the static bundle with nginx.
 # nginx:1.31.3-alpine is the version the floating nginx:alpine tag resolved
 # to at scaffold time (mainline branch, verified via Docker Hub).
