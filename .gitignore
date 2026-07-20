@@ -1,6 +1,9 @@
+# Global concerns only - stack-specific ignores live in
+# backend/.gitignore and frontend/.gitignore.
+
 # Environment
-.env
-.env.local
+.env*
+!.env.example
 
 # OS
 .DS_Store
@@ -11,22 +14,6 @@ Thumbs.db
 *.iml
 .vscode/*
 !.vscode/extensions.json
-
-# Java / Maven (backend)
-backend/target/
-*.class
-*.jar
-!backend/.mvn/wrapper/maven-wrapper.jar
-hs_err_pid*
-
-# Node / Bun (frontend)
-frontend/node_modules/
-node_modules/
-frontend/dist/
-frontend/.angular/
-frontend/coverage/
-npm-debug.log*
-bun-debug.log*
 
 # Logs
 *.log
