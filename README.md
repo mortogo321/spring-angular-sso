@@ -15,7 +15,7 @@ Docker Compose.
 | SSO flow | Authorization Code + PKCE (S256) against Keycloak, role-based access (`user` / `admin`) enforced on both sides |
 | Docker | Multi-stage builds for both the backend (Maven wrapper -> slim JRE) and frontend (bun build -> nginx) |
 | Testcontainers | Backend integration tests spin up real dependencies instead of mocking the database |
-| CI/CD | Staged pipeline (Code Quality -> Test -> Build) with parallel backend/frontend lanes, path-based step skipping, GHCR publish, and a documented (opt-in) deploy + rollback path |
+| CI/CD | Staged pipeline (Code Quality -> Test -> Build) with parallel backend/frontend lanes, path-based step skipping (Markdown-only commits trigger no run), GHCR publish, and a documented (opt-in) deploy + rollback path |
 
 ## Architecture
 
