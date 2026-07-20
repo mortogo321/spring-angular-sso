@@ -1,0 +1,73 @@
+{
+  "realm": "showcase",
+  "enabled": true,
+  "displayName": "Showcase",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+
+  "accessTokenLifespan": 300,
+  "accessTokenLifespanForImplicitFlow": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "offlineSessionIdleTimeout": 2592000,
+  "accessCodeLifespan": 60,
+  "accessCodeLifespanLogin": 1800,
+  "accessCodeLifespanUserAction": 300,
+
+  "roles": {
+    "realm": [
+      {
+        "name": "user",
+        "description": "Standard authenticated user of the showcase application"
+      },
+      {
+        "name": "admin",
+        "description": "Administrative user with access to admin-only features"
+      }
+    ]
+  },
+
+  "clients": [
+    {
+      "clientId": "showcase-frontend",
+      "name": "Showcase Frontend",
+      "description": "Public SPA client used by the Angular frontend for Authorization Code + PKCE login",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "bearerOnly": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "authorizationServicesEnabled": false,
+      "redirectUris": ["http://localhost:4200/*"],
+      "webOrigins": ["http://localhost:4200"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:4200/*"
+      },
+      "fullScopeAllowed": true,
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ]
+    }
+  ],
+
+  "internationalizationEnabled": false,
+  "defaultDefaultClientScopes": [
+    "role_list",
+    "profile",
+    "email",
+    "roles",
+    "web-origins",
+    "acr"
+  ]
+}

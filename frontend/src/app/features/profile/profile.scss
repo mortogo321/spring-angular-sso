@@ -1,0 +1,31 @@
+.profile {
+  dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.4rem 1rem;
+  }
+
+  dt {
+    font-weight: 600;
+    color: #52606d;
+  }
+
+  .role-badge {
+    display: inline-block;
+    background: #e0e7ff;
+    color: #3730a3;
+    border-radius: 999px;
+    padding: 0.15rem 0.6rem;
+    margin-right: 0.35rem;
+    font-size: 0.8rem;
+  }
+
+  .claims {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 1rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 0.8rem;
+  }
+}

@@ -1,0 +1,35 @@
+<form class="task-form card" [formGroup]="form" (ngSubmit)="submit()">
+  <label class="field">
+    <span>Title</span>
+    <input type="text" formControlName="title" />
+  </label>
+  @if (titleControl.invalid && titleControl.touched) {
+    <p class="error-text">
+      @if (titleControl.hasError('required')) {
+        Title is required.
+      }
+      @if (titleControl.hasError('maxlength')) {
+        Title must be 120 characters or fewer.
+      }
+    </p>
+  }
+
+  <label class="field">
+    <span>Description</span>
+    <textarea formControlName="description" rows="3"></textarea>
+  </label>
+
+  <label class="field">
+    <span>Status</span>
+    <select formControlName="status">
+      @for (status of statuses; track status) {
+        <option [value]="status">{{ status }}</option>
+      }
+    </select>
+  </label>
+
+  <div class="task-form__actions">
+    <button type="submit">{{ task() ? 'Save changes' : 'Create task' }}</button>
+    <button type="button" (click)="cancelled.emit()">Cancel</button>
+  </div>
+</form>

@@ -1,0 +1,44 @@
+<section class="tasks">
+  <header class="tasks__header">
+    <h1>Tasks</h1>
+    @if (!showForm()) {
+      <button type="button" (click)="startCreate()">New task</button>
+    }
+  </header>
+
+  @if (error()) {
+    <p class="error-text">{{ error() }}</p>
+  }
+
+  @if (showForm()) {
+    <app-task-form [task]="editingTask()" (save)="save($event)" (cancelled)="cancelForm()" />
+  }
+
+  @if (loading() && !tasks().length) {
+    <p>Loading tasks…</p>
+  } @else if (!tasks().length) {
+    <p>No tasks yet.</p>
+  }
+
+  <ul class="tasks__list">
+    @for (task of tasks(); track task.id) {
+      <li class="tasks__item card">
+        <div class="tasks__item-main">
+          <h3>{{ task.title }}</h3>
+          <span [class]="statusClass(task.status)">{{ task.status }}</span>
+        </div>
+
+        @if (task.description) {
+          <p class="tasks__description">{{ task.description }}</p>
+        }
+
+        <div class="tasks__item-actions">
+          <button type="button" (click)="startEdit(task)">Edit</button>
+          @if (isAdmin()) {
+            <button type="button" class="danger" (click)="remove(task)">Delete</button>
+          }
+        </div>
+      </li>
+    }
+  </ul>
+</section>

@@ -1,0 +1,55 @@
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: #1f2933;
+  color: #f8fafc;
+
+  &__brand a {
+    color: inherit;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  &__nav {
+    display: flex;
+    gap: 1rem;
+    flex: 1;
+
+    a {
+      color: #cbd5e1;
+      text-decoration: none;
+
+      &.is-active {
+        color: #f8fafc;
+        font-weight: 600;
+      }
+    }
+  }
+
+  &__auth {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  &__user {
+    color: #cbd5e1;
+    font-size: 0.9rem;
+  }
+
+  button {
+    background: #3b82f6;
+    color: #f8fafc;
+    border: none;
+    border-radius: 4px;
+    padding: 0.4rem 0.9rem;
+    cursor: pointer;
+
+    &:hover {
+      background: #2563eb;
+    }
+  }
+}

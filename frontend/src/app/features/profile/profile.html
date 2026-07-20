@@ -1,0 +1,25 @@
+<section class="profile card">
+  <h1>Profile</h1>
+
+  <dl>
+    <dt>Name</dt>
+    <dd>{{ name() || '—' }}</dd>
+
+    @if (email()) {
+      <dt>Email</dt>
+      <dd>{{ email() }}</dd>
+    }
+
+    <dt>Roles</dt>
+    <dd>
+      @for (role of roles(); track role) {
+        <span class="role-badge">{{ role }}</span>
+      } @empty {
+        <span>No realm roles granted.</span>
+      }
+    </dd>
+  </dl>
+
+  <h2>Decoded token claims</h2>
+  <pre class="claims">{{ claimsJson() }}</pre>
+</section>

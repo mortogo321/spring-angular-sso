@@ -1,0 +1,24 @@
+<header class="header">
+  <div class="header__brand">
+    <a routerLink="/">Task Board SSO</a>
+  </div>
+
+  <nav class="header__nav">
+    <a routerLink="/" routerLinkActive="is-active" [routerLinkActiveOptions]="{ exact: true }"
+      >Home</a
+    >
+    @if (authenticated()) {
+      <a routerLink="/tasks" routerLinkActive="is-active">Tasks</a>
+      <a routerLink="/profile" routerLinkActive="is-active">Profile</a>
+    }
+  </nav>
+
+  <div class="header__auth">
+    @if (authenticated()) {
+      <span class="header__user">{{ username() }}</span>
+      <button type="button" (click)="logout()">Log out</button>
+    } @else {
+      <button type="button" (click)="login()">Log in</button>
+    }
+  </div>
+</header>

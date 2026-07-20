@@ -1,0 +1,35 @@
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+
+# Java / Maven (backend)
+backend/target/
+*.class
+*.jar
+!backend/.mvn/wrapper/maven-wrapper.jar
+hs_err_pid*
+
+# Node / Bun (frontend)
+frontend/node_modules/
+node_modules/
+frontend/dist/
+frontend/.angular/
+frontend/coverage/
+npm-debug.log*
+bun-debug.log*
+
+# Logs
+*.log
+
+# Docker
+docker-compose.override.yml

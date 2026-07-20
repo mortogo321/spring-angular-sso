@@ -1,0 +1,128 @@
+name: spring-angular-sso
+
+networks:
+  showcase-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-showcase}
+      POSTGRES_USER: ${POSTGRES_USER:-showcase}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-showcase}
+    ports:
+      - "5432:5432"
+    volumes:
+      # postgres:18+ images store data in major-version subdirectories and
+      # require the mount at /var/lib/postgresql (not .../data).
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-showcase} -d ${POSTGRES_DB:-showcase}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - showcase-net
+
+  # Keycloak's issuer (the `iss` claim baked into every token) is pinned via
+  # KC_HOSTNAME to the browser-facing address, http://localhost:8081. That
+  # value is fixed regardless of which network a request arrives on, so it
+  # is identical whether the frontend (browser, via the published :8081
+  # port) or the backend (server-side) is asking. See root README.md,
+  # "Keycloak issuer / hostname" section, for the full rationale.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HOSTNAME: http://localhost:8081
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./infra/keycloak/realm-showcase.json:/opt/keycloak/data/import/realm-showcase.json:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "{ printf 'HEAD /health/ready HTTP/1.0\r\n\r\n' >&0; grep -q 'HTTP/1.0 200'; } 0<>/dev/tcp/localhost/9000"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks:
+      - showcase-net
+
+  # One-shot job: seeds the two demo users via Keycloak's admin REST API,
+  # since the realm import above intentionally ships with NO users (so no
+  # credential pair is ever committed to this repo). Exits after it's done;
+  # re-running `docker compose up` is safe (the script is idempotent).
+  keycloak-init:
+    image: curlimages/curl:latest
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: showcase
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      DEMO_USER_PASSWORD: ${DEMO_USER_PASSWORD:-demo1234}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-admin1234}
+    volumes:
+      - ./infra/keycloak/init-users.sh:/init-users.sh:ro
+    entrypoint: ["sh", "/init-users.sh"]
+    networks:
+      - showcase-net
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-docker}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-showcase}
+      DB_USER: ${DB_USER:-showcase}
+      DB_PASSWORD: ${DB_PASSWORD:-showcase}
+      # Matches the token `iss` claim (see the keycloak service comment
+      # above) - used for issuer validation only, no network call needed.
+      KEYCLOAK_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-http://localhost:8081/realms/showcase}
+      # Standard Spring Boot property name, set directly as an env var so it
+      # takes effect via relaxed binding regardless of the backend's own
+      # application.yml. Lets the backend fetch signing keys over the
+      # internal compose network (localhost:8081 is not reachable from
+      # inside this container) while still validating `iss` against the
+      # externally-reachable issuer above. See root README.md for why both
+      # are needed.
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/showcase/protocol/openid-connect/certs
+    ports:
+      - "8080:8080"
+    networks:
+      - showcase-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    depends_on:
+      - backend
+    ports:
+      - "4200:80"
+    networks:
+      - showcase-net

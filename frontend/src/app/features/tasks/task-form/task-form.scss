@@ -1,0 +1,46 @@
+.task-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+
+    span {
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: #52606d;
+    }
+
+    input,
+    textarea,
+    select {
+      padding: 0.5rem;
+      border: 1px solid #cbd2d9;
+      border-radius: 4px;
+      font: inherit;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    gap: 0.5rem;
+
+    button {
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+      background: #3b82f6;
+      color: #fff;
+
+      &[type='button'] {
+        background: #e2e8f0;
+        color: #1f2933;
+      }
+    }
+  }
+}

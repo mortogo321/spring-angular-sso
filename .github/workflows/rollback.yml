@@ -1,0 +1,86 @@
+name: Rollback
+
+# Manually re-tags an already-published GHCR image (by commit sha or tag)
+# as :latest, so the next `docker compose pull && docker compose up -d` on
+# a deployed host picks up that older, known-good build again. Does not
+# rebuild anything - it only re-points the :latest tag at existing image
+# content already pushed by ci.yml's `docker` job.
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Which image(s) to roll back"
+        required: true
+        type: choice
+        options:
+          - backend
+          - frontend
+          - both
+        default: both
+      ref:
+        description: "Existing GHCR tag to roll back to - typically a previous commit sha from a successful main build (see the package's tags at ghcr.io)"
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  rollback:
+    name: Re-tag GHCR image(s) as :latest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Compute lowercase image repository (GHCR requires lowercase)
+        run: echo "IMAGE_REPO=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Re-tag backend image as :latest
+        if: ${{ inputs.image == 'backend' || inputs.image == 'both' }}
+        run: |
+          docker buildx imagetools create \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_REPO }}/backend:latest \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_REPO }}/backend:${{ inputs.ref }}
+
+      - name: Re-tag frontend image as :latest
+        if: ${{ inputs.image == 'frontend' || inputs.image == 'both' }}
+        run: |
+          docker buildx imagetools create \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_REPO }}/frontend:latest \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_REPO }}/frontend:${{ inputs.ref }}
+
+  # -----------------------------------------------------------------------
+  # redeploy:
+  #   # UNCOMMENT AND CONFIGURE - mirrors the `deploy` job template in
+  #   # ci.yml. Required secrets (repository or `production` environment
+  #   # secrets): DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, and optionally
+  #   # DEPLOY_PORT (defaults to 22).
+  #   name: Redeploy rolled-back images
+  #   needs: rollback
+  #   runs-on: ubuntu-latest
+  #   environment: production
+  #   steps:
+  #     - name: Deploy over SSH (docker compose pull && up -d)
+  #       uses: appleboy/ssh-action@v1
+  #       with:
+  #         host: ${{ secrets.DEPLOY_HOST }}
+  #         username: ${{ secrets.DEPLOY_USER }}
+  #         key: ${{ secrets.DEPLOY_SSH_KEY }}
+  #         port: ${{ secrets.DEPLOY_PORT || 22 }}
+  #         script: |
+  #           cd /opt/spring-angular-sso
+  #           docker compose pull
+  #           docker compose up -d --remove-orphans
+  # -----------------------------------------------------------------------

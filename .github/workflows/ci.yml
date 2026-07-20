@@ -1,0 +1,202 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # First job: figures out which parts of the tree changed so the rest of
+  # the pipeline can skip work that isn't affected - e.g. a docs-only PR
+  # doesn't need to spin up Testcontainers. On push to `main` every
+  # downstream job still runs regardless (see each job's `if:`), so main
+  # always gets full validation.
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      docker: ${{ steps.filter.outputs.docker }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+    steps:
+      - name: Detect changes
+        uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+            docker:
+              - 'backend/**'
+              - 'frontend/**'
+              - 'docker-compose.yml'
+            workflows:
+              - '.github/workflows/**'
+
+  backend:
+    name: Backend (Spring Boot)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.workflows == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # Quality gate before the (slower) test run: fails fast on
+      # formatting drift instead of waiting for Testcontainers to spin up.
+      - name: Code quality (Spotless formatting check)
+        run: ./mvnw --batch-mode spotless:check
+
+      - name: Run tests and build (mvnw verify, incl. Testcontainers)
+        run: ./mvnw --batch-mode verify
+
+  frontend:
+    name: Frontend (Angular)
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.workflows == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Quality gate before tests: angular-eslint (ng lint).
+      - name: Code quality (lint)
+        run: bun run lint
+
+      - name: Run unit tests (headless)
+        run: bun run test
+
+      - name: Production build
+        run: bun run build
+
+  docker:
+    name: Docker images
+    needs: [changes, backend, frontend]
+    # Runs whenever backend and/or frontend actually ran (success) or were
+    # legitimately skipped by the path filter (not failed/cancelled), and
+    # only if this PR/push actually touches something docker-relevant -
+    # unless it's a push to main, which always gets a full build.
+    if: |
+      always() &&
+      (needs.backend.result == 'success' || needs.backend.result == 'skipped') &&
+      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped') &&
+      (needs.changes.outputs.docker == 'true' || needs.changes.outputs.workflows == 'true' || github.event_name == 'push')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Compute lowercase image repository (GHCR requires lowercase)
+        run: echo "IMAGE_REPO=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (and push on main) backend image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_REPO }}/backend:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_REPO }}/backend:${{ github.sha }}
+
+      - name: Build (and push on main) frontend image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_REPO }}/frontend:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_REPO }}/frontend:${{ github.sha }}
+
+  # -----------------------------------------------------------------------
+  # deploy:
+  #   # UNCOMMENT AND CONFIGURE before enabling automatic deployment.
+  #   #
+  #   # Required secrets (repository or `production` environment secrets):
+  #   #   DEPLOY_HOST    - SSH host/IP of the target machine
+  #   #   DEPLOY_USER    - SSH user on the target machine
+  #   #   DEPLOY_SSH_KEY - private key with access to DEPLOY_USER@DEPLOY_HOST
+  #   #   DEPLOY_PORT    - (optional) SSH port, defaults to 22
+  #   #
+  #   # Assumes the target host already has this repo checked out (or at
+  #   # least docker-compose.yml + infra/) at /opt/spring-angular-sso and
+  #   # `docker login ghcr.io` credentials configured, or a private-registry
+  #   # pull secret set up separately.
+  #   name: Deploy
+  #   needs: docker
+  #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  #   runs-on: ubuntu-latest
+  #   environment: production
+  #   steps:
+  #     - name: Deploy over SSH (docker compose pull && up -d)
+  #       uses: appleboy/ssh-action@v1
+  #       with:
+  #         host: ${{ secrets.DEPLOY_HOST }}
+  #         username: ${{ secrets.DEPLOY_USER }}
+  #         key: ${{ secrets.DEPLOY_SSH_KEY }}
+  #         port: ${{ secrets.DEPLOY_PORT || 22 }}
+  #         script: |
+  #           cd /opt/spring-angular-sso
+  #           docker compose pull
+  #           docker compose up -d --remove-orphans
+  #
+  #     # --- Alternative: Kubernetes / Helm, instead of the SSH step above ---
+  #     # Required secrets: KUBE_CONFIG (base64-encoded kubeconfig)
+  #     # - name: Set up kubectl
+  #     #   uses: azure/setup-kubectl@v5
+  #     #
+  #     # - name: Set up Helm
+  #     #   uses: azure/setup-helm@v5
+  #     #
+  #     # - name: helm upgrade
+  #     #   run: |
+  #     #     echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig.yaml
+  #     #     export KUBECONFIG=kubeconfig.yaml
+  #     #     helm upgrade --install spring-angular-sso ./infra/helm \
+  #     #       --set backend.image.tag=${{ github.sha }} \
+  #     #       --set frontend.image.tag=${{ github.sha }}
+  # -----------------------------------------------------------------------

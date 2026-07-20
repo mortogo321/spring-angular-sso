@@ -1,0 +1,18 @@
+.hero {
+  text-align: center;
+  padding: 3rem 1rem;
+
+  .cta {
+    display: inline-block;
+    margin-top: 1rem;
+    padding: 0.6rem 1.2rem;
+    background: #3b82f6;
+    color: #fff;
+    border-radius: 6px;
+    text-decoration: none;
+
+    &:hover {
+      background: #2563eb;
+    }
+  }
+}
