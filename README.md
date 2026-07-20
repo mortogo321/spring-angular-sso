@@ -1,5 +1,7 @@
 # Spring + Angular SSO Showcase
 
+[![CI](https://github.com/mortogo321/spring-angular-sso/actions/workflows/ci.yml/badge.svg)](https://github.com/mortogo321/spring-angular-sso/actions/workflows/ci.yml)
+
 A small full-stack reference app demonstrating single sign-on between a Spring
 Boot API and an Angular SPA, fronted by Keycloak, all wired together with
 Docker Compose.
@@ -13,7 +15,7 @@ Docker Compose.
 | SSO flow | Authorization Code + PKCE (S256) against Keycloak, role-based access (`user` / `admin`) enforced on both sides |
 | Docker | Multi-stage builds for both the backend (Maven wrapper -> slim JRE) and frontend (bun build -> nginx) |
 | Testcontainers | Backend integration tests spin up real dependencies instead of mocking the database |
-| CI/CD | Path-based change detection, formatting/lint quality gates, tests, Docker image builds, GHCR publish, and a documented (opt-in) deploy + rollback path |
+| CI/CD | Staged pipeline (Code Quality -> Test -> Build) with parallel backend/frontend lanes, path-based step skipping, GHCR publish, and a documented (opt-in) deploy + rollback path |
 
 ## Architecture
 
@@ -177,7 +179,8 @@ never merges on a partially-validated pipeline. Because only steps skip
    frontend/workflow changes, or push)*.
 3. **Build** *(job `build`, needs both test jobs)* - builds both multi-stage
    `Dockerfile`s with Buildx to catch build breakage early *(gated on
-   backend/frontend/docker/workflow changes, or push)*; on push to `main`
+   docker-relevant changes - backend, frontend, or compose file - workflow
+   changes, or push)*; on push to `main`
    it additionally logs in to GHCR and pushes `latest` + commit-sha tags
    for both images.
 4. **Deploy** *(job `deploy`, needs `build`; present but fully commented
