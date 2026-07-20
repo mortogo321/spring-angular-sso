@@ -27,6 +27,12 @@ jobs:
       docker: ${{ steps.filter.outputs.docker }}
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
+      # paths-filter resolves the diff via local git on push events (the
+      # checkout-free API mode only works for pull_request), so it needs
+      # the repository checked out.
+      - name: Checkout
+        uses: actions/checkout@v7
+
       - name: Detect changes
         uses: dorny/paths-filter@v4
         id: filter
