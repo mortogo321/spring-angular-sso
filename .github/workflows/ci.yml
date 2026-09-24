@@ -19,6 +19,8 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
+  JAVA_VERSION: '21'
+  BUN_VERSION: '1.4.2'
 
 jobs:
   # Each job below runs its own `dorny/paths-filter` step rather than
@@ -56,10 +58,10 @@ jobs:
 
       - name: Set up JDK 21 (Temurin)
         if: steps.filter.outputs.backend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: ${{ env.JAVA_VERSION }}
           cache: maven
 
       # Quality gate before the (slower) test job: fails fast on
@@ -92,6 +94,8 @@ jobs:
       - name: Set up Bun
         if: steps.filter.outputs.frontend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
 
       - name: Install dependencies
         if: steps.filter.outputs.frontend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
@@ -103,6 +107,11 @@ jobs:
         if: steps.filter.outputs.frontend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
         working-directory: frontend
         run: bun run lint
+
+      - name: Typecheck
+        if: steps.filter.outputs.frontend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
+        working-directory: frontend
+        run: bun run typecheck
 
   test-backend:
     name: Test (Backend)
@@ -127,10 +136,10 @@ jobs:
 
       - name: Set up JDK 21 (Temurin)
         if: steps.filter.outputs.backend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: ${{ env.JAVA_VERSION }}
           cache: maven
 
       - name: Run tests and build (mvnw verify, incl. Testcontainers)
@@ -162,6 +171,8 @@ jobs:
       - name: Set up Bun
         if: steps.filter.outputs.frontend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
 
       - name: Install dependencies
         if: steps.filter.outputs.frontend == 'true' || steps.filter.outputs.workflows == 'true' || github.event_name == 'push'

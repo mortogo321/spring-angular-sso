@@ -36,7 +36,7 @@ services:
   # port) or the backend (server-side) is asking. See root README.md,
   # "Keycloak issuer / hostname" section, for the full rationale.
   keycloak:
-    image: quay.io/keycloak/keycloak:26.7.0
+    image: quay.io/keycloak/keycloak:26.7.3
     command: ["start-dev", "--import-realm"]
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
@@ -66,7 +66,7 @@ services:
   # credential pair is ever committed to this repo). Exits after it's done;
   # re-running `docker compose up` is safe (the script is idempotent).
   keycloak-init:
-    image: curlimages/curl:latest
+    image: curlimages/curl:8.17.0
     depends_on:
       keycloak:
         condition: service_healthy
