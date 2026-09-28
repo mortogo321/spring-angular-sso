@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---- Stage 1: build ----
-FROM maven:3.9.16-eclipse-temurin-21-noble AS build
+FROM maven:3-eclipse-temurin-24-noble AS build
 WORKDIR /build
 
 # Copy only the POM first so dependency resolution is cached in its own layer
@@ -24,7 +24,7 @@ RUN cp target/backend.jar application.jar \
 # between prod build and dev. NOT the default build target: it sits before the
 # final runtime stage, so an untargeted `docker build` (no --target) still
 # stops at, and produces, the prod runtime image below.
-FROM maven:3.9.16-eclipse-temurin-21-noble AS dev
+FROM maven:3-eclipse-temurin-24-noble AS dev
 WORKDIR /app
 
 # inotify-tools drives the recompile-on-change loop in dev-entrypoint.sh.
