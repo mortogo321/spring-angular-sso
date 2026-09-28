@@ -52,7 +52,7 @@ EXPOSE 8080
 ENTRYPOINT ["./dev-entrypoint.sh"]
 
 # ---- Stage 2: runtime ----
-FROM eclipse-temurin:21-jre-noble AS runtime
+FROM eclipse-temurin:24-jre-noble AS runtime
 WORKDIR /application
 
 # curl is needed for the HEALTHCHECK below; the base image does not ship it
