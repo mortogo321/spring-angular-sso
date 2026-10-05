@@ -36,7 +36,7 @@ EXPOSE 4200
 CMD ["bun", "run", "ng", "serve", "--host", "0.0.0.0", "--proxy-config", "proxy.conf.docker.json"]
 
 # Stage 2: serve the static bundle with nginx.
-FROM nginx:1.31.3-alpine AS runtime
+FROM nginx:1.31.6-alpine AS runtime
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist/frontend/browser /usr/share/nginx/html
