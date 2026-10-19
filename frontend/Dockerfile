@@ -5,7 +5,7 @@
 # but the Angular CLI checks process.version and rejects bun's emulated Node,
 # so `ng` itself must run on real Node.
 # oven/bun:1.4.2-alpine matches the bun version pinned in this repo.
-FROM node:26.10-alpine AS build
+FROM node:26.12-alpine AS build
 COPY --from=oven/bun:1.4.2-alpine /usr/local/bin/bun /usr/local/bin/bun
 
 WORKDIR /app
@@ -21,7 +21,7 @@ RUN bun run build
 # Angular CLI still needs real Node, bun is just the package manager/runner.
 # NOT the default build target: it sits before the final runtime stage below,
 # so an untargeted `docker build` still produces the prod nginx image.
-FROM node:26.10-alpine AS dev
+FROM node:26.12-alpine AS dev
 COPY --from=oven/bun:1.4.2-alpine /usr/local/bin/bun /usr/local/bin/bun
 
 WORKDIR /app
